@@ -1,24 +1,26 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, CheckCircle, Clock, AlertTriangle, DollarSign, Copy } from "lucide-react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useToast } from "@/hooks/use-toast";
+import { getAuth } from "firebase/auth";
+import { useFirestoreCollection } from "@/hooks/useFirestoreCollection";
 
 export const Mensalidades = () => {
-  console.log("Mensalidades component rendered");
-  
-  const [clientes, setClientes] = useLocalStorage("clientes", []);
-  const [produtos] = useLocalStorage("produtos", []);
+  const userId = getAuth().currentUser?.uid;
+  const { data: clientes, update: updateCliente } = useFirestoreCollection("clientes");
+  const { data: produtos } = useFirestoreCollection("produtos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [filtroDia, setFiltroDia] = useState("todos");
   const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  console.log("Clientes:", clientes);
-  console.log("Produtos:", produtos);
+  useEffect(() => {
+    return () => setIsDialogOpen(false);
+  }, []);
 
   const hoje = new Date();
   const mesAtual = hoje.getMonth();
@@ -26,43 +28,35 @@ export const Mensalidades = () => {
 
   const calcularStatus = (cliente: any, produto: any) => {
     try {
-      console.log("Calculando status para:", cliente?.nome, produto);
-      
       if (!cliente || !produto) return "a_pagar";
-      
-      // Verificar se o pagamento da mensalidade foi marcado como pago
+      // Se estiver pago, sempre retorna pago
       if (produto.statusMensalidade === "pago") return "pago";
-      
-      // Se não foi marcado como pago, verificar se está atrasado
+      // Se estiver atrasado manualmente, retorna atrasado
+      if (produto.statusMensalidade === "atrasado") return "atrasado";
+      // Se estiver a_pagar e a data já passou, retorna atrasado automaticamente
       const dataVencimento = new Date(anoAtual, mesAtual, cliente.diaVencimento || 1);
-      if (dataVencimento < hoje) return "atrasado";
-      
-      return "a_pagar";
+      if (produto.statusMensalidade === "a_pagar" && dataVencimento < hoje) return "atrasado";
+      // Caso contrário, retorna o status salvo
+      return produto.statusMensalidade || "a_pagar";
     } catch (error) {
       console.error("Erro ao calcular status:", error);
       return "a_pagar";
     }
   };
 
-  const atualizarStatus = (clienteId: number, produtoIndex: number, novoStatus: string) => {
+  // Atualizar status agora usa updateCliente do Firestore
+  const atualizarStatus = async (clienteId: string, produtoIndex: number, novoStatus: string) => {
     try {
-      console.log("Atualizando status:", clienteId, produtoIndex, novoStatus);
-      
-      const novosClientes = clientes.map((cliente: any) => {
-        if (cliente.id === clienteId) {
-          const novosProdutos = [...(cliente.produtos || [])];
-          if (novosProdutos[produtoIndex]) {
-            novosProdutos[produtoIndex] = { 
-              ...novosProdutos[produtoIndex], 
-              statusMensalidade: novoStatus 
-            };
-          }
-          return { ...cliente, produtos: novosProdutos };
-        }
-        return cliente;
-      });
-      
-      setClientes(novosClientes);
+      const cliente = clientes.find((c: any) => c.id === clienteId);
+      if (!cliente) return;
+      const novosProdutos = [...(cliente.produtos || [])];
+      if (novosProdutos[produtoIndex]) {
+        novosProdutos[produtoIndex] = {
+          ...novosProdutos[produtoIndex],
+          statusMensalidade: novoStatus
+        };
+      }
+      await updateCliente(clienteId, { ...cliente, produtos: novosProdutos });
       toast({
         title: "Status atualizado",
         description: `Pagamento marcado como ${novoStatus === "pago" ? "pago" : novoStatus === "atrasado" ? "atrasado" : "a pagar"}`
@@ -155,8 +149,6 @@ Obrigado!`;
     console.error("Erro ao criar lista de mensalidades:", error);
   }
 
-  console.log("Mensalidades geradas:", mensalidades);
-
   // Aplicar filtros
   const mensalidadesFiltradas = mensalidades.filter((m: any) => {
     if (filtroStatus !== "todos" && m.status !== filtroStatus) return false;
@@ -172,12 +164,20 @@ Obrigado!`;
     return acc;
   }, {});
 
-  console.log("Estatísticas:", estatisticas);
+
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Mensalidades</h1>
+      <div className="mb-4">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 capitalize leading-tight">Mensalidades</h2>
+        <div className="text-sm sm:text-base md:text-lg text-gray-600 mt-1 sm:mt-2">
+          {new Date().toLocaleDateString("pt-BR", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}
+        </div>
       </div>
 
       {/* Estatísticas */}
@@ -275,7 +275,7 @@ Obrigado!`;
         </Card>
       ) : (
         <div className="space-y-4">
-          {mensalidadesFiltradas.map((mensalidade: any) => (
+          {Array.isArray(mensalidadesFiltradas) && Array.from(new Map(mensalidadesFiltradas.filter(m => !!m.id).map(m => [m.id, m])).values()).map((mensalidade) => (
             <Card key={mensalidade.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4">
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-center">

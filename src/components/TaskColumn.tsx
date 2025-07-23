@@ -45,6 +45,8 @@ export const TaskColumn = ({
     }
   };
 
+  const uniqueTasks = Array.from(new Map(tasks.filter(t => !!t.id).map(t => [t.id, t])).values());
+
   return (
     <Card 
       className={`min-h-[600px] ${getColumnColor()} border-l-4`}
@@ -60,7 +62,7 @@ export const TaskColumn = ({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {tasks.map((task) => (
+        {uniqueTasks.map((task) => (
           <TaskCard
             key={task.id}
             task={task}
@@ -69,7 +71,7 @@ export const TaskColumn = ({
             onDeleteTask={onDeleteTask}
           />
         ))}
-        {tasks.length === 0 && (
+        {uniqueTasks.length === 0 && (
           <div className="text-center text-gray-500 py-8">
             Nenhuma tarefa
           </div>

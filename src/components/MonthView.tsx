@@ -72,7 +72,7 @@ export const MonthView = ({
             
             return (
               <button
-                key={day}
+                key={index}
                 onClick={() => onDayClick(dateStr)}
                 className={`
                   h-8 text-xs rounded hover:bg-blue-100 transition-colors relative

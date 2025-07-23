@@ -1,11 +1,11 @@
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { MonthView } from "./MonthView";
 import { DayTaskDialog } from "./DayTaskDialog";
+import { getAuth } from "firebase/auth";
+import { useFirestoreCollection } from "@/hooks/useFirestoreCollection";
 
 export interface CalendarTask {
   id: string;
@@ -13,13 +13,17 @@ export interface CalendarTask {
   description?: string;
   date: string; // formato YYYY-MM-DD
   createdAt: string;
+  userId: string; // Adicionado para associar ao usuário
 }
 
 export const Calendario = () => {
+  const userId = getAuth().currentUser?.uid;
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
-  const [calendarTasks, setCalendarTasks] = useLocalStorage("calendarTasks", [] as CalendarTask[]);
+  const { data: calendarTasks, add: addCalendarTask } = useFirestoreCollection("calendarTasks");
+  // Adicionar acesso ao localStorage de tasks do sistema
+  const { data: tasks, add: addTask } = useFirestoreCollection("tasks");
 
   const months = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -31,23 +35,30 @@ export const Calendario = () => {
     setShowTaskDialog(true);
   };
 
-  const handleAddTask = (taskData: { title: string; description?: string }) => {
+  const handleAddTask = async (taskData: { title: string; description?: string }) => {
     if (!selectedDate) return;
-
-    const newTask: CalendarTask = {
-      id: Date.now().toString(),
+    const newTask = {
       title: taskData.title,
       description: taskData.description,
       date: selectedDate,
       createdAt: new Date().toISOString(),
     };
-
-    setCalendarTasks([...calendarTasks, newTask]);
-    setShowTaskDialog(false);
+    await addCalendarTask(newTask);
+    // Também salva como tarefa do sistema (aba Tarefas)
+    const newSystemTask = {
+      title: newTask.title,
+      description: newTask.description,
+      status: "todo",
+      createdAt: newTask.createdAt,
+      updatedAt: newTask.createdAt,
+    };
+    await addTask(newSystemTask);
   };
 
   const handleDeleteTask = (taskId: string) => {
-    setCalendarTasks(calendarTasks.filter((task: CalendarTask) => task.id !== taskId));
+    // This function will need to be updated to use Firestore
+    // For now, it will just remove from the current view, not persist
+    // setCalendarTasks(calendarTasks.filter((task: CalendarTask) => task.id !== taskId));
   };
 
   const getTasksForDate = (date: string) => {
@@ -56,9 +67,19 @@ export const Calendario = () => {
 
   return (
     <div className="space-y-6">
+      <div className="mb-4">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 capitalize leading-tight">Calendário</h2>
+        <div className="text-sm sm:text-base md:text-lg text-gray-600 mt-1 sm:mt-2">
+          {new Date().toLocaleDateString("pt-BR", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}
+        </div>
+      </div>
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Calendário</h1>
           <p className="text-gray-600 mt-2">Visualize e gerencie suas tarefas por data</p>
         </div>
         

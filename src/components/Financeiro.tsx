@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { TrendingUp, TrendingDown, DollarSign, Calendar, BarChart3, PieChart, Plus, Edit, Trash2 } from "lucide-react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useFirestoreCollection } from "@/hooks/useFirestoreCollection";
+import { getAuth } from "firebase/auth";
 
 interface Gasto {
   id: string;
@@ -17,12 +18,14 @@ interface Gasto {
   categoria: string;
   data: string;
   observacoes?: string;
+  userId: string; // Adicionado para associar ao usuário
 }
 
 export const Financeiro = () => {
-  const [clientes] = useLocalStorage("clientes", []);
-  const [produtos] = useLocalStorage("produtos", []);
-  const [gastos, setGastos] = useLocalStorage("gastos", [] as Gasto[]);
+  const userId = getAuth().currentUser?.uid;
+  const { data: clientes } = useFirestoreCollection("clientes");
+  const { data: produtos } = useFirestoreCollection("produtos");
+  const { data: gastos, add: addGasto, update: updateGasto, remove: removeGasto } = useFirestoreCollection("gastos");
   const [mesEscolhido, setMesEscolhido] = useState(new Date().getMonth().toString());
   const [anoEscolhido, setAnoEscolhido] = useState(new Date().getFullYear().toString());
   const [showGastoForm, setShowGastoForm] = useState(false);
@@ -46,6 +49,11 @@ export const Financeiro = () => {
     "Educação", "Tecnologia", "Marketing", "Outros"
   ];
 
+  // Filtro de duplicatas defensivo para todos os arrays
+  const clientesUnicos = Array.isArray(clientes) ? Array.from(new Map(clientes.filter(c => !!c && !!c.id).map(c => [c.id, c])).values()) : [];
+  const produtosUnicos = Array.isArray(produtos) ? Array.from(new Map(produtos.filter(p => !!p && !!p.id).map(p => [p.id, p])).values()) : [];
+  const gastosUnicos = Array.isArray(gastos) ? Array.from(new Map(gastos.filter(g => !!g && !!g.id).map(g => [g.id, g])).values()) : [];
+
   const calcularDados = useMemo(() => {
     const mes = parseInt(mesEscolhido);
     const ano = parseInt(anoEscolhido);
@@ -58,10 +66,10 @@ export const Financeiro = () => {
     let dadosPorProduto: { [key: string]: any } = {};
     let vencimentosPorDia: { [key: number]: any } = {};
 
-    clientes.forEach((cliente: any) => {
+    clientesUnicos.forEach((cliente: any) => {
       cliente.produtos.forEach((produto: any) => {
         const dataVencimento = new Date(ano, mes, cliente.diaVencimento);
-        const produtoInfo = produtos.find((p: any) => p.id === produto.produtoId);
+        const produtoInfo = produtosUnicos.find((p: any) => p.id === produto.produtoId);
         const produtoNome = produtoInfo?.nome || "Produto Desconhecido";
 
         // Calcular implementação
@@ -187,12 +195,12 @@ export const Financeiro = () => {
     });
 
     // Calcular gastos do mês
-    const gastosMes = gastos.filter((gasto: Gasto) => {
+    const gastosMes = gastosUnicos.filter((gasto: Gasto) => {
       const dataGasto = new Date(gasto.data);
       return dataGasto.getMonth() === mes && dataGasto.getFullYear() === ano;
     });
 
-    const totalGastos = gastosMes.reduce((total: number, gasto: Gasto) => total + gasto.valor, 0);
+    const totalGastos = gastosMes?.reduce((total: number, gasto: Gasto) => total + gasto.valor, 0) || 0;
 
     return {
       totalEsperado,
@@ -206,7 +214,7 @@ export const Financeiro = () => {
       vencimentosPorDia: Object.values(vencimentosPorDia).sort((a: any, b: any) => a.dia - b.dia),
       gastosMes
     };
-  }, [clientes, produtos, gastos, mesEscolhido, anoEscolhido]);
+  }, [clientesUnicos, produtosUnicos, gastosUnicos, mesEscolhido, anoEscolhido]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -227,32 +235,29 @@ export const Financeiro = () => {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  const handleSaveGasto = () => {
+  const handleSaveGasto = async () => {
     if (!novoGasto.descricao || !novoGasto.valor || !novoGasto.categoria || !novoGasto.data) {
       return;
     }
-
-    const gasto: Gasto = {
-      id: editingGasto ? editingGasto.id : Date.now().toString(),
+    const gasto = {
       descricao: novoGasto.descricao,
       valor: parseFloat(novoGasto.valor),
       categoria: novoGasto.categoria,
       data: novoGasto.data,
-      observacoes: novoGasto.observacoes
+      observacoes: novoGasto.observacoes,
+      userId: userId // associa ao usuário
     };
-
     if (editingGasto) {
-      setGastos(gastos.map((g: Gasto) => g.id === editingGasto.id ? gasto : g));
+      await updateGasto(editingGasto.id, gasto);
     } else {
-      setGastos([...gastos, gasto]);
+      await addGasto(gasto);
     }
-
     setNovoGasto({ descricao: "", valor: "", categoria: "", data: "", observacoes: "" });
     setEditingGasto(null);
     setShowGastoForm(false);
   };
 
-  const handleEditGasto = (gasto: Gasto) => {
+  const handleEditGasto = (gasto: any) => {
     setEditingGasto(gasto);
     setNovoGasto({
       descricao: gasto.descricao,
@@ -264,15 +269,29 @@ export const Financeiro = () => {
     setShowGastoForm(true);
   };
 
-  const handleDeleteGasto = (gastoId: string) => {
-    setGastos(gastos.filter((g: Gasto) => g.id !== gastoId));
+  const handleDeleteGasto = async (gastoId: string) => {
+    await removeGasto(gastoId);
   };
+
+  // Fecha o modal ao desmontar o componente para evitar erro de Portal
+  useEffect(() => {
+    return () => setShowGastoForm(false);
+  }, []);
 
   return (
     <div className="space-y-6">
+      <div className="mb-4">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 capitalize leading-tight">Financeiro</h2>
+        <div className="text-sm sm:text-base md:text-lg text-gray-600 mt-1 sm:mt-2">
+          {new Date().toLocaleDateString("pt-BR", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}
+        </div>
+      </div>
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Relatório Financeiro</h1>
-        
         <div className="flex gap-3">
           <Select value={mesEscolhido} onValueChange={setMesEscolhido}>
             <SelectTrigger className="w-40">
@@ -380,6 +399,14 @@ export const Financeiro = () => {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{editingGasto ? 'Editar Gasto' : 'Novo Gasto'}</DialogTitle>
+                  <DialogDescription>
+                    {editingGasto
+                      ? 'Edite as informações do gasto.'
+                      : 'Preencha as informações para cadastrar um novo gasto.'}
+                  </DialogDescription>
+                  <p className="text-sm text-gray-600">
+                    {editingGasto ? 'Edite as informações do gasto' : 'Preencha as informações para cadastrar um novo gasto'}
+                  </p>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>
@@ -453,10 +480,10 @@ export const Financeiro = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            {calcularDados.gastosMes.length === 0 ? (
+            {Array.isArray(calcularDados.gastosMes) && Array.from(new Map(calcularDados.gastosMes.filter(g => !!g && !!g.id).map(g => [g.id, g])).values()).length === 0 ? (
               <p className="text-center text-gray-500 py-4">Nenhum gasto cadastrado para este mês</p>
             ) : (
-              calcularDados.gastosMes.map((gasto: Gasto) => (
+              Array.isArray(calcularDados.gastosMes) && Array.from(new Map(calcularDados.gastosMes.filter(g => !!g && !!g.id).map(g => [g.id, g])).values()).map((gasto: Gasto) => (
                 <div key={gasto.id} className="border rounded-lg p-3">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
@@ -548,11 +575,11 @@ export const Financeiro = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {calcularDados.produtosMaisLucrativos.length === 0 ? (
+              {Array.isArray(calcularDados.produtosMaisLucrativos) && calcularDados.produtosMaisLucrativos.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">Nenhum dado disponível</p>
               ) : (
-                calcularDados.produtosMaisLucrativos.map((produto: any, index: number) => (
-                  <div key={produto.nome} className="space-y-2">
+                Array.isArray(calcularDados.produtosMaisLucrativos) && calcularDados.produtosMaisLucrativos.map((produto: any) => (
+                  <div key={produto.id ? produto.id : produto.nome} className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-sm">{produto.nome}</span>
                       <span className="text-sm text-gray-600">{produto.clientes} cliente(s)</span>
@@ -586,11 +613,11 @@ export const Financeiro = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {calcularDados.vencimentosPorDia.length === 0 ? (
+              {Array.isArray(calcularDados.vencimentosPorDia) && calcularDados.vencimentosPorDia.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">Nenhum vencimento cadastrado</p>
               ) : (
-                calcularDados.vencimentosPorDia.map((vencimento: any) => (
-                  <div key={vencimento.dia} className="border rounded-lg p-3">
+                Array.isArray(calcularDados.vencimentosPorDia) && calcularDados.vencimentosPorDia.map((vencimento: any) => (
+                  <div key={vencimento.dia + '-' + vencimento.totalValor} className="border rounded-lg p-3">
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-medium">Dia {vencimento.dia}</span>
                       <div className="text-right">
@@ -599,8 +626,8 @@ export const Financeiro = () => {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      {vencimento.clientes.slice(0, 3).map((cliente: any, index: number) => (
-                        <div key={index} className="flex justify-between items-center text-xs">
+                      {Array.isArray(vencimento.clientes) && vencimento.clientes.slice(0, 3).map((cliente: any) => (
+                        <div key={cliente.id ? cliente.id : cliente.nome + '-' + cliente.produto} className="flex justify-between items-center text-xs">
                           <span>{cliente.nome} - {cliente.produto}</span>
                           <div className="flex items-center gap-2">
                             <span>{formatCurrency(cliente.valor)}</span>
@@ -608,7 +635,7 @@ export const Financeiro = () => {
                           </div>
                         </div>
                       ))}
-                      {vencimento.clientes.length > 3 && (
+                      {Array.isArray(vencimento.clientes) && vencimento.clientes.length > 3 && (
                         <div className="text-xs text-gray-500 text-center">
                           +{vencimento.clientes.length - 3} outros
                         </div>

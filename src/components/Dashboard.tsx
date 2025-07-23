@@ -10,11 +10,17 @@ import {
   TrendingUp,
   AlertTriangle
 } from "lucide-react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useFirestoreCollection } from "@/hooks/useFirestoreCollection";
+// Removido import quebrado de useLocalStorage
 
-export const Dashboard = () => {
-  const [produtos] = useLocalStorage("produtos", []);
-  const [clientes] = useLocalStorage("clientes", []);
+// Função utilitária para formatar moeda brasileira
+function formatarMoedaBR(valor: number) {
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+export const Dashboard = ({ onOpenSidebar }: { onOpenSidebar?: () => void }) => {
+  const { data: produtos = [] } = useFirestoreCollection("produtos");
+  const { data: clientes = [] } = useFirestoreCollection("clientes");
   const [selectedDia, setSelectedDia] = useState(new Date().getDate());
 
   const calcularValores = () => {
@@ -70,20 +76,19 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <div className="text-sm text-gray-500">
-          {new Date().toLocaleDateString("pt-BR", { 
-            weekday: "long", 
-            year: "numeric", 
-            month: "long", 
-            day: "numeric" 
+      <div className="mb-4">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 capitalize leading-tight">Dashboard</h2>
+        <div className="text-sm sm:text-base md:text-lg text-gray-600 mt-1 sm:mt-2">
+          {new Date().toLocaleDateString("pt-BR", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
           })}
         </div>
       </div>
-
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total de Clientes</CardTitle>
@@ -94,7 +99,6 @@ export const Dashboard = () => {
             <p className="text-xs text-muted-foreground">Clientes ativos</p>
           </CardContent>
         </Card>
-
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total de Produtos</CardTitle>
@@ -105,30 +109,27 @@ export const Dashboard = () => {
             <p className="text-xs text-muted-foreground">Produtos cadastrados</p>
           </CardContent>
         </Card>
-
         <Card className="border-l-4 border-l-yellow-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Receita do Mês</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">R$ {totalMes.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatarMoedaBR(totalMes)}</div>
             <p className="text-xs text-muted-foreground">Total esperado</p>
           </CardContent>
         </Card>
-
         <Card className="border-l-4 border-l-red-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pendente</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">R$ {totalPendente.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatarMoedaBR(totalPendente)}</div>
             <p className="text-xs text-muted-foreground">{clientesVencidos} vencidos</p>
           </CardContent>
         </Card>
       </div>
-
       {/* Progresso Financeiro */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
@@ -142,7 +143,7 @@ export const Dashboard = () => {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Recebido</span>
-                <span className="font-medium">R$ {totalRecebido.toFixed(2)}</span>
+                <span className="font-medium">{formatarMoedaBR(totalRecebido)}</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
@@ -151,11 +152,10 @@ export const Dashboard = () => {
                 ></div>
               </div>
             </div>
-            
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Pendente</span>
-                <span className="font-medium">R$ {totalPendente.toFixed(2)}</span>
+                <span className="font-medium">{formatarMoedaBR(totalPendente)}</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
@@ -166,7 +166,6 @@ export const Dashboard = () => {
             </div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -188,18 +187,13 @@ export const Dashboard = () => {
                   ))}
                 </select>
               </div>
-              
               <div className="space-y-2">
-                {clientesVencemHoje.length > 0 ? (
-                  clientesVencemHoje.map((cliente: any) => (
-                    <div key={cliente.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
-                      <span className="text-sm font-medium">{cliente.nome}</span>
-                      <Badge variant="outline">{cliente.produtos.length} produto(s)</Badge>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500">Nenhum cliente vence no dia {selectedDia}</p>
-                )}
+                {Array.isArray(clientesVencemHoje) && Array.from(new Map(clientesVencemHoje.filter(c => !!c.id).map(c => [c.id, c])).values()).map((cliente) => (
+                  <div key={cliente.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                    <span className="text-sm font-medium">{cliente.nome}</span>
+                    <Badge variant="outline">{cliente.produtos.length} produto(s)</Badge>
+                  </div>
+                ))}
               </div>
             </div>
           </CardContent>

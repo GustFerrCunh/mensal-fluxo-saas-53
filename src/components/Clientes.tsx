@@ -1,79 +1,117 @@
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Users, Trash2, Edit, Phone, Mail, DollarSign } from "lucide-react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useToast } from "@/hooks/use-toast";
+import { getAuth } from "firebase/auth";
+import { useFirestoreCollection } from "@/hooks/useFirestoreCollection";
 
 export const Clientes = () => {
-  const [clientes, setClientes] = useLocalStorage("clientes", []);
-  const [produtos] = useLocalStorage("produtos", []);
+  const userId = getAuth().currentUser?.uid;
+  const { data: clientes, add: addCliente, update: updateCliente, remove: removeCliente } = useFirestoreCollection("clientes");
+  const { data: produtos } = useFirestoreCollection("produtos");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCliente, setEditingCliente] = useState(null);
   const { toast } = useToast();
+  const novoClienteButtonRef = useRef<HTMLButtonElement>(null);
 
-  const [formData, setFormData] = useState({
-    nome: "",
-    email: "",
-    whatsapp: "",
-    diaVencimento: "1",
-    produtos: []
-  });
-
-  const resetForm = () => {
-    setFormData({
+  // React Hook Form setup
+  const { control, handleSubmit, reset, setFocus, setValue, getValues, formState: { errors } } = useForm({
+    defaultValues: {
       nome: "",
       email: "",
       whatsapp: "",
       diaVencimento: "1",
       produtos: []
-    });
+    }
+  });
+  const { fields: produtosFields, append, remove, update } = useFieldArray({
+    control,
+    name: "produtos"
+  });
+
+  // Substitua setFormData, formData, erros por React Hook Form
+
+  // Função para lidar com a mudança de estado do Dialog
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (open) {
+      setFocus("nome");
+    } else {
+      setTimeout(() => {
+        novoClienteButtonRef.current?.focus();
+      }, 0);
+      reset();
+      setEditingCliente(null);
+    }
+  };
+
+  // Função para resetar o formulário e o estado de edição ao clicar em 'Novo Cliente'
+  const handleNovoCliente = () => {
+    reset();
     setEditingCliente(null);
   };
 
+  // Função para adicionar produto
   const addProduto = () => {
-    setFormData({
-      ...formData,
-      produtos: [...formData.produtos, { 
-        produtoId: "", 
-        valorImplementacao: "", 
-        valorMensalidade: "", 
-        statusImplementacao: "pendente",
-        statusMensalidade: "a_pagar" 
-      }]
+    append({
+      produtoId: "",
+      nome: "",
+      valorImplementacao: "",
+      valorMensalidade: "",
+      statusImplementacao: "pendente",
+      statusMensalidade: "a_pagar"
     });
   };
 
-  const updateProduto = (index: number, field: string, value: string) => {
-    const novosProdutor = [...formData.produtos];
-    novosProdutor[index] = { ...novosProdutor[index], [field]: value };
-    setFormData({ ...formData, produtos: novosProdutor });
-  };
-
-  const removeProduto = (index: number) => {
-    setFormData({
-      ...formData,
-      produtos: formData.produtos.filter((_, i) => i !== index)
+  // Função para editar cliente
+  const handleEdit = (cliente: any) => {
+    setEditingCliente(cliente);
+    reset({
+      nome: cliente.nome,
+      email: cliente.email || "",
+      whatsapp: cliente.whatsapp || "",
+      diaVencimento: cliente.diaVencimento.toString(),
+      produtos: cliente.produtos.map((p: any) => ({
+        produtoId: p.produtoId.toString(),
+        nome: p.nome || "",
+        valorImplementacao: p.valorImplementacao !== undefined && p.valorImplementacao !== null ? p.valorImplementacao.toString().replace('.', ',') : "",
+        valorMensalidade: p.valorMensalidade !== undefined && p.valorMensalidade !== null ? p.valorMensalidade.toString().replace('.', ',') : "",
+        statusImplementacao: p.statusImplementacao || "pendente",
+        statusMensalidade: p.statusMensalidade || "a_pagar"
+      }))
     });
+    setIsDialogOpen(true);
   };
 
-  const handleSubmit = () => {
-    if (!formData.nome.trim()) {
-      toast({
-        title: "Erro",
-        description: "Nome do cliente é obrigatório",
-        variant: "destructive"
-      });
-      return;
-    }
+  // Função para converter valor mascarado para número
+  function parseMoeda(valor: string) {
+    if (!valor) return 0;
+    // Remove R$, espaços e pontos dos milhares, troca vírgula por ponto
+    return parseFloat(
+      valor
+        .replace('R$', '')
+        .replace(/\s/g, '')
+        .replace(/\./g, '')
+        .replace(',', '.')
+    ) || 0;
+  }
 
-    if (formData.produtos.length === 0) {
+  // Função para converter número para string de centavos
+  function numeroParaCentavosString(valor: number) {
+    return Math.round(Number(valor) * 100).toString();
+  }
+
+  // Função para submeter o formulário
+  const onSubmit = async (data: any) => {
+    if (data.produtos.length === 0) {
       toast({
         title: "Erro",
         description: "Adicione pelo menos um produto",
@@ -81,8 +119,7 @@ export const Clientes = () => {
       });
       return;
     }
-
-    const produtosValidos = formData.produtos.filter((p: any) => p.produtoId && (p.valorImplementacao || p.valorMensalidade));
+    const produtosValidos = data.produtos.filter((p: any) => p.produtoId && (p.valorImplementacao || p.valorMensalidade));
     if (produtosValidos.length === 0) {
       toast({
         title: "Erro",
@@ -91,61 +128,35 @@ export const Clientes = () => {
       });
       return;
     }
-
     const cliente = {
-      id: editingCliente?.id || Date.now(),
-      nome: formData.nome,
-      email: formData.email,
-      whatsapp: formData.whatsapp,
-      diaVencimento: parseInt(formData.diaVencimento),
+      nome: data.nome,
+      email: data.email,
+      whatsapp: data.whatsapp,
+      diaVencimento: parseInt(data.diaVencimento),
       produtos: produtosValidos.map((p: any) => ({
         produtoId: parseInt(p.produtoId),
-        valorImplementacao: p.valorImplementacao ? parseFloat(p.valorImplementacao) : 0,
-        valorMensalidade: p.valorMensalidade ? parseFloat(p.valorMensalidade) : 0,
+        valorImplementacao: p.valorImplementacao ? parseMoeda(p.valorImplementacao) : 0,
+        valorMensalidade: p.valorMensalidade ? parseMoeda(p.valorMensalidade) : 0,
         statusImplementacao: p.statusImplementacao,
         statusMensalidade: p.statusMensalidade
       })),
-      criadoEm: editingCliente?.criadoEm || new Date().toISOString()
+      criadoEm: editingCliente?.criadoEm || new Date().toISOString(),
+      userId: userId
     };
-
     if (editingCliente) {
-      setClientes(clientes.map((c: any) => c.id === cliente.id ? cliente : c));
-      toast({
-        title: "Sucesso",
-        description: "Cliente atualizado com sucesso!"
-      });
+      await updateCliente(editingCliente.id, cliente);
+      toast({ title: "Sucesso", description: "Cliente atualizado com sucesso!" });
     } else {
-      setClientes([...clientes, cliente]);
-      toast({
-        title: "Sucesso",
-        description: "Cliente cadastrado com sucesso!"
-      });
+      await addCliente(cliente);
+      toast({ title: "Sucesso", description: "Cliente cadastrado com sucesso!" });
     }
-
-    resetForm();
     setIsDialogOpen(false);
+    setEditingCliente(null);
+    reset();
   };
 
-  const handleEdit = (cliente: any) => {
-    setEditingCliente(cliente);
-    setFormData({
-      nome: cliente.nome,
-      email: cliente.email || "",
-      whatsapp: cliente.whatsapp || "",
-      diaVencimento: cliente.diaVencimento.toString(),
-      produtos: cliente.produtos.map((p: any) => ({
-        produtoId: p.produtoId.toString(),
-        valorImplementacao: p.valorImplementacao?.toString() || "",
-        valorMensalidade: p.valorMensalidade?.toString() || "",
-        statusImplementacao: p.statusImplementacao || "pendente",
-        statusMensalidade: p.statusMensalidade || "a_pagar"
-      }))
-    });
-    setIsDialogOpen(true);
-  };
-
-  const handleDelete = (clienteId: number) => {
-    setClientes(clientes.filter((c: any) => c.id !== clienteId));
+  const handleDelete = async (clienteId: string) => {
+    await removeCliente(clienteId);
     toast({
       title: "Sucesso",
       description: "Cliente excluído com sucesso!"
@@ -179,13 +190,59 @@ export const Clientes = () => {
     );
   };
 
+  // Função utilitária para formatar moeda brasileira
+  function formatarMoedaBR(valor: string | number) {
+    let num = typeof valor === 'string' ? parseFloat(valor) : valor;
+    if (isNaN(num)) num = 0;
+    return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  // Função para aplicar máscara de WhatsApp brasileiro
+  function maskWhatsapp(value: string) {
+    // Remove tudo que não for número
+    let v = value.replace(/\D/g, "");
+    v = v.slice(0, 11); // Limita a 11 dígitos
+    if (v.length < 2) return v;
+    if (v.length < 7) return `(${v.slice(0, 2)}) ${v.slice(2)}`;
+    if (v.length <= 11) return `(${v.slice(0, 2)}) ${v.slice(2, 7)}-${v.slice(7)}`;
+    return `(${v.slice(0, 2)}) ${v.slice(2, 7)}-${v.slice(7, 11)}`;
+  }
+
+  // Função para aplicar máscara de moeda brasileira em tempo real
+  function maskMoedaBR(valor: string | number) {
+    let v = typeof valor === 'number' ? valor.toString() : valor;
+    v = v.replace(/\D/g, "");
+    v = v.padStart(3, '0');
+    let reais = v.slice(0, -2);
+    let centavos = v.slice(-2);
+    reais = reais.replace(/^0+/, '');
+    reais = reais.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    let resultado = `R$ ${reais ? reais : '0'},${centavos}`;
+    return resultado;
+  }
+
+  useEffect(() => {
+    return () => setIsDialogOpen(false);
+  }, []);
+
   return (
     <div className="space-y-6">
+      <div className="mb-4">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 capitalize leading-tight">Clientes</h2>
+        <div className="text-sm sm:text-base md:text-lg text-gray-600 mt-1 sm:mt-2">
+          {new Date().toLocaleDateString("pt-BR", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}
+        </div>
+      </div>
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        {/* Dialog sempre montado, controlado por open/onOpenChange */}
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button onClick={resetForm} className="bg-blue-500 hover:bg-blue-600">
+            <Button ref={novoClienteButtonRef} onClick={handleNovoCliente} className="bg-blue-500 hover:bg-blue-600">
               <Plus className="h-4 w-4 mr-2" />
               Novo Cliente
             </Button>
@@ -195,55 +252,88 @@ export const Clientes = () => {
               <DialogTitle>
                 {editingCliente ? "Editar Cliente" : "Novo Cliente"}
               </DialogTitle>
+              <DialogDescription>
+                {editingCliente
+                  ? "Edite as informações do cliente e seus produtos."
+                  : "Preencha as informações para cadastrar um novo cliente e seus produtos."}
+              </DialogDescription>
+              <p className="text-sm text-gray-600">
+                {editingCliente ? "Edite as informações do cliente e seus produtos" : "Preencha as informações para cadastrar um novo cliente"}
+              </p>
             </DialogHeader>
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="nome">Nome do Cliente *</Label>
-                  <Input
-                    id="nome"
-                    value={formData.nome}
-                    onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                    placeholder="Digite o nome do cliente"
+                  <Controller
+                    name="nome"
+                    control={control}
+                    rules={{ required: "Nome é obrigatório", minLength: { value: 3, message: "Mínimo 3 caracteres" } }}
+                    render={({ field }) => (
+                      <Input
+                        {...field}
+                        id="nome"
+                        placeholder="Digite o nome do cliente"
+                      />
+                    )}
                   />
+                  {errors.nome && <div className="text-red-500 text-xs mt-1">{errors.nome.message as string}</div>}
                 </div>
                 <div>
                   <Label htmlFor="diaVencimento">Dia de Vencimento</Label>
-                  <Select value={formData.diaVencimento} onValueChange={(value) => setFormData({...formData, diaVencimento: value})}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map(dia => (
-                        <SelectItem key={dia} value={dia.toString()}>Dia {dia}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Controller
+                    name="diaVencimento"
+                    control={control}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map(dia => (
+                            <SelectItem key={dia} value={dia.toString()}>Dia {dia}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 </div>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="email">E-mail</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    placeholder="email@exemplo.com"
+                  <Controller
+                    name="email"
+                    control={control}
+                    rules={{ pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "E-mail inválido" } }}
+                    render={({ field }) => (
+                      <Input
+                        {...field}
+                        id="email"
+                        type="email"
+                        placeholder="email@exemplo.com"
+                      />
+                    )}
                   />
+                  {errors.email && <div className="text-red-500 text-xs mt-1">{errors.email.message as string}</div>}
                 </div>
                 <div>
                   <Label htmlFor="whatsapp">WhatsApp</Label>
-                  <Input
-                    id="whatsapp"
-                    value={formData.whatsapp}
-                    onChange={(e) => setFormData({...formData, whatsapp: e.target.value})}
-                    placeholder="(11) 99999-9999"
+                  <Controller
+                    name="whatsapp"
+                    control={control}
+                    rules={{ pattern: { value: /^\(\d{2}\)\s9\d{4}-\d{4}$/, message: "Formato: (11) 99999-9999" } }}
+                    render={({ field }) => (
+                      <Input
+                        {...field}
+                        id="whatsapp"
+                        placeholder="(11) 99999-9999"
+                      />
+                    )}
                   />
+                  {errors.whatsapp && <div className="text-red-500 text-xs mt-1">{errors.whatsapp.message as string}</div>}
                 </div>
               </div>
-
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label>Produtos Contratados</Label>
@@ -252,94 +342,118 @@ export const Clientes = () => {
                     Adicionar Produto
                   </Button>
                 </div>
-
-                {formData.produtos.map((produto: any, index: number) => (
-                  <Card key={index} className="p-4">
+                {produtosFields.map((produto, index) => (
+                  <Card key={produto.id || index} className="p-4">
                     <div className="space-y-3">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="md:col-span-2">
                           <Label>Produto</Label>
-                          <Select 
-                            value={produto.produtoId} 
-                            onValueChange={(value) => updateProduto(index, "produtoId", value)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione um produto" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {produtos.map((p: any) => (
-                                <SelectItem key={p.id} value={p.id.toString()}>
-                                  {p.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Controller
+                            name={`produtos.${index}.produtoId`}
+                            control={control}
+                            render={({ field }) => (
+                              <Select
+                                value={field.value}
+                                onValueChange={value => {
+                                  field.onChange(value);
+                                  // Preencher valores automaticamente ao selecionar produto
+                                  const produtoSelecionado = produtos.find((p: any) => p.id.toString() === value);
+                                  if (produtoSelecionado) {
+                                    setValue(`produtos.${index}.valorImplementacao`, produtoSelecionado.valorImplementacao ? maskMoedaBR(numeroParaCentavosString(produtoSelecionado.valorImplementacao)) : "");
+                                    setValue(`produtos.${index}.valorMensalidade`, produtoSelecionado.valorMensalidade ? maskMoedaBR(numeroParaCentavosString(produtoSelecionado.valorMensalidade)) : "");
+                                  }
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione um produto" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {produtos.map((p: any) => (
+                                    <SelectItem key={p.id} value={p.id.toString()}>
+                                      {p.nome}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <Label>Valor Implementação (R$)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={produto.valorImplementacao}
-                            onChange={(e) => updateProduto(index, "valorImplementacao", e.target.value)}
-                            placeholder="0.00"
+                          <Controller
+                            name={`produtos.${index}.valorImplementacao`}
+                            control={control}
+                            render={({ field }) => (
+                              <Input
+                                {...field}
+                                type="text"
+                                placeholder="R$ 0,00"
+                              />
+                            )}
                           />
                         </div>
                         <div>
                           <Label>Status Implementação</Label>
-                          <Select 
-                            value={produto.statusImplementacao} 
-                            onValueChange={(value) => updateProduto(index, "statusImplementacao", value)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pendente">Pendente</SelectItem>
-                              <SelectItem value="pago">Pago</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Controller
+                            name={`produtos.${index}.statusImplementacao`}
+                            control={control}
+                            render={({ field }) => (
+                              <Select value={field.value} onValueChange={field.onChange}>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pendente">Pendente</SelectItem>
+                                  <SelectItem value="pago">Pago</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <Label>Valor Mensalidade (R$)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={produto.valorMensalidade}
-                            onChange={(e) => updateProduto(index, "valorMensalidade", e.target.value)}
-                            placeholder="0.00"
+                          <Controller
+                            name={`produtos.${index}.valorMensalidade`}
+                            control={control}
+                            render={({ field }) => (
+                              <Input
+                                {...field}
+                                type="text"
+                                placeholder="R$ 0,00"
+                              />
+                            )}
                           />
                         </div>
                         <div>
                           <Label>Status Mensalidade</Label>
-                          <Select 
-                            value={produto.statusMensalidade} 
-                            onValueChange={(value) => updateProduto(index, "statusMensalidade", value)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="a_pagar">A Pagar</SelectItem>
-                              <SelectItem value="pago">Pago</SelectItem>
-                              <SelectItem value="atrasado">Atrasado</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Controller
+                            name={`produtos.${index}.statusMensalidade`}
+                            control={control}
+                            render={({ field }) => (
+                              <Select value={field.value} onValueChange={field.onChange}>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="a_pagar">A Pagar</SelectItem>
+                                  <SelectItem value="pago">Pago</SelectItem>
+                                  <SelectItem value="atrasado">Atrasado</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
                         </div>
                       </div>
-
                       <div className="flex justify-end">
                         <Button
                           type="button"
                           variant="destructive"
                           size="sm"
-                          onClick={() => removeProduto(index)}
+                          onClick={() => remove(index)}
                         >
                           <Trash2 className="h-4 w-4 mr-1" />
                           Remover
@@ -348,27 +462,26 @@ export const Clientes = () => {
                     </div>
                   </Card>
                 ))}
-
-                {formData.produtos.length === 0 && (
+                {produtosFields.length === 0 && (
                   <p className="text-sm text-gray-500 text-center py-4">
                     Nenhum produto adicionado. Clique em "Adicionar Produto" para começar.
                   </p>
                 )}
               </div>
-
               <div className="flex gap-2 pt-4">
-                <Button onClick={handleSubmit} className="flex-1">
+                <Button type="submit" className="flex-1">
                   {editingCliente ? "Atualizar" : "Cadastrar"}
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => setIsDialogOpen(false)}
                   className="flex-1"
                 >
                   Cancelar
                 </Button>
               </div>
-            </div>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
@@ -382,8 +495,8 @@ export const Clientes = () => {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {clientes.map((cliente: any) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {Array.isArray(clientes) && Array.from(new Map(clientes.filter(c => !!c.id).map(c => [c.id, c])).values()).map((cliente) => (
             <Card key={cliente.id} className="hover:shadow-lg transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
@@ -431,7 +544,7 @@ export const Clientes = () => {
                   <div className="space-y-3">
                     {cliente.produtos.map((produto: any, index: number) => (
                       <div key={index} className="bg-gray-50 p-3 rounded space-y-2">
-                        <p className="text-sm font-medium">{getProdutoNome(produto.produtoId)}</p>
+                        <p className="text-sm font-medium">{produto.nome || getProdutoNome(produto.produtoId)}</p>
                         
                         {produto.valorImplementacao > 0 && (
                           <div className="flex items-center justify-between">

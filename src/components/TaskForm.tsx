@@ -56,6 +56,7 @@ export const TaskForm = ({ task, onSubmit, onCancel }: TaskFormProps) => {
       status,
       dueDate: dueDate || undefined,
       daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek : undefined,
+      userId: ""
     });
   };
 
@@ -117,7 +118,7 @@ export const TaskForm = ({ task, onSubmit, onCancel }: TaskFormProps) => {
           <div className="space-y-2">
             <Label>Dias da Semana</Label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {daysOptions.map((day) => (
+              {Array.isArray(daysOptions) && daysOptions.map((day) => (
                 <div key={day.value} className="flex items-center space-x-2">
                   <Checkbox
                     id={day.value}

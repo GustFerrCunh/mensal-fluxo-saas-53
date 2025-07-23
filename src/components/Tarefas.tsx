@@ -3,9 +3,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus } from "lucide-react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useFirestoreCollection } from "@/hooks/useFirestoreCollection";
 import { TaskColumn } from "./TaskColumn";
 import { TaskForm } from "./TaskForm";
+import { getAuth } from "firebase/auth";
 
 export interface Task {
   id: string;
@@ -16,10 +17,12 @@ export interface Task {
   daysOfWeek?: string[];
   createdAt: string;
   updatedAt: string;
+  userId: string; // Adicionado para associar a um usuário
 }
 
 export const Tarefas = () => {
-  const [tasks, setTasks] = useLocalStorage("tasks", [] as Task[]);
+  const userId = getAuth().currentUser?.uid;
+  const { data: tasks, add: addTask, update: updateTask, remove: removeTask } = useFirestoreCollection("tasks");
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
@@ -33,18 +36,20 @@ export const Tarefas = () => {
     return tasks.filter((task: Task) => task.status === status);
   };
 
-  const handleCreateTask = (taskData: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
+  const handleCreateTask = async (taskData: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
     const newTask: Task = {
       ...taskData,
-      id: Date.now().toString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      userId: userId // associa ao usuário
+      ,
+      id: ""
     };
-    setTasks([...tasks, newTask]);
+    await addTask(newTask);
     setShowForm(false);
   };
 
-  const handleUpdateTask = (taskData: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
+  const handleUpdateTask = async (taskData: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
     if (!editingTask) return;
     
     const updatedTask: Task = {
@@ -53,23 +58,25 @@ export const Tarefas = () => {
       updatedAt: new Date().toISOString(),
     };
     
-    setTasks(tasks.map((task: Task) => 
-      task.id === editingTask.id ? updatedTask : task
-    ));
+    await updateTask(editingTask.id, updatedTask);
     setEditingTask(null);
     setShowForm(false);
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    setTasks(tasks.filter((task: Task) => task.id !== taskId));
+  const handleDeleteTask = async (taskId: string) => {
+    await removeTask(taskId);
   };
 
-  const handleMoveTask = (taskId: string, newStatus: Task["status"]) => {
-    setTasks(tasks.map((task: Task) => 
-      task.id === taskId 
-        ? { ...task, status: newStatus, updatedAt: new Date().toISOString() }
-        : task
-    ));
+  const handleMoveTask = async (taskId: string, newStatus: Task["status"]) => {
+    const taskToUpdate = tasks.find(task => task.id === taskId);
+    if (!taskToUpdate) return;
+
+    const updatedTask: Task = {
+      ...taskToUpdate,
+      status: newStatus,
+      updatedAt: new Date().toISOString(),
+    };
+    await updateTask(taskId, updatedTask);
   };
 
   const handleEditTask = (task: Task) => {
@@ -84,9 +91,19 @@ export const Tarefas = () => {
 
   return (
     <div className="space-y-6">
+      <div className="mb-4">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 capitalize leading-tight">Tarefas</h2>
+        <div className="text-sm sm:text-base md:text-lg text-gray-600 mt-1 sm:mt-2">
+          {new Date().toLocaleDateString("pt-BR", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}
+        </div>
+      </div>
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Tarefas</h1>
           <p className="text-gray-600 mt-2">Gerencie suas tarefas por fases - arraste e solte para mover</p>
         </div>
         <Button onClick={() => setShowForm(true)} className="flex items-center gap-2">

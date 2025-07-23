@@ -78,7 +78,7 @@ export const TaskCard = ({ task, onMoveTask, onEditTask, onDeleteTask }: TaskCar
                 <Edit className="h-3 w-3 mr-2" />
                 Editar
               </DropdownMenuItem>
-              {getStatusOptions().map((status) => (
+              {Array.isArray(getStatusOptions()) && getStatusOptions().map((status) => (
                 <DropdownMenuItem 
                   key={status.value}
                   onClick={() => onMoveTask(task.id, status.value as Task["status"])}

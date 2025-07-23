@@ -4,7 +4,8 @@ import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
-  DialogTitle 
+  DialogTitle, 
+  DialogDescription 
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,41 +65,38 @@ export const DayTaskDialog = ({
           <DialogTitle>
             {formatDate(date)}
           </DialogTitle>
+          <DialogDescription>
+            Gerencie as tarefas do dia selecionado. Adicione, visualize ou exclua tarefas para esta data.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Lista de tarefas existentes */}
           <div className="max-h-60 overflow-y-auto space-y-2">
-            {tasks.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">
-                Nenhuma tarefa para este dia
-              </p>
-            ) : (
-              tasks.map((task) => (
-                <Card key={task.id} className="p-3">
-                  <CardContent className="p-0">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h4 className="font-medium">{task.title}</h4>
-                        {task.description && (
-                          <p className="text-sm text-gray-600 mt-1">
-                            {task.description}
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onDeleteTask(task.id)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+            {Array.isArray(tasks) && Array.from(new Map(tasks.filter(t => !!t.id).map(t => [t.id, t])).values()).map((task) => (
+              <Card key={task.id} className="p-3">
+                <CardContent className="p-0">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h4 className="font-medium">{task.title}</h4>
+                      {task.description && (
+                        <p className="text-sm text-gray-600 mt-1">
+                          {task.description}
+                        </p>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDeleteTask(task.id)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           {/* Botão para mostrar formulário */}
